@@ -312,7 +312,7 @@ public class ClassDataProvider {
                 }
             };
             if (this.clPatcher != null) {
-                Helper.acceptWithClPatcher(classReader, classVisitor, this.clPatcher);
+                ClassNodeHelper.acceptWithClPatcher(classReader, classVisitor, this.clPatcher);
             } else {
                 classReader.accept(classVisitor, ClassReader.SKIP_CODE);
             }
@@ -394,7 +394,7 @@ public class ClassDataProvider {
                     }
                 };
                 if (this.clPatcher != null) {
-                    Helper.acceptWithClPatcher(classReader, classVisitor, this.clPatcher);
+                    ClassNodeHelper.acceptWithClPatcher(classReader, classVisitor, this.clPatcher);
                 } else {
                     classReader.accept(classVisitor, ClassReader.SKIP_CODE);
                 }
@@ -409,14 +409,44 @@ public class ClassDataProvider {
         }
     }
 
-    private static class Helper {
-        // Allow ClassDataProvider to not require ClassTree at runtime, funnily enough, it's due to frames
+    public void addClassesNodes(Map<String, ? extends ClassNode> classes) {
+        ClassNodeHelper.addClassesNodes(this, classes);
+    }
+
+    // Allow ClassDataProvider to not require ClassTree at runtime, funnily enough, it's due to frames
+    private static class ClassNodeHelper {
         static void acceptWithClPatcher(
                 ClassReader classReader, ClassVisitor classVisitor, Consumer<ClassNode> clPatcher) {
             ClassNode classNode = new ClassNode();
             classReader.accept(classNode, ClassReader.SKIP_CODE);
             clPatcher.accept(classNode);
             classNode.accept(classVisitor);
+        }
+
+        static void addClassesNodes(ClassDataProvider classDataProvider, Map<String, ? extends ClassNode> classes) {
+            for (Map.Entry<String, ? extends ClassNode> entry:classes.entrySet()) {
+                ClData2 clData = classDataProvider.new ClData2(entry.getKey());
+                ClassNode classNode = entry.getValue();
+                if (classNode.name != null) {
+                    classNode.accept(new ClassVisitor(ASM_API) {
+                        @Override
+                        public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+                            clData.access = access & ~Opcodes.ACC_SUPER;
+                            clData.superClass = superName;
+                            clData.custom = true;
+                            if (interfaces != null && interfaces.length != 0) {
+                                clData.interfaces = Arrays.asList(interfaces);
+                            }
+                        }
+                    });
+                } else {
+                    if (debugClassResolution) {
+                        System.out.println("DEBUG: Invalid input class -> " + clData.name);
+                    }
+                    clData.superClass = "java/lang/Object";
+                }
+                classDataProvider.clDataHashMap.put(clData.name, clData);
+            }
         }
     }
 }
